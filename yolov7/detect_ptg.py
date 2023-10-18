@@ -1,4 +1,4 @@
-import os 
+import os
 import argparse
 import random
 import torch
@@ -36,7 +36,7 @@ def data_loader(recipes, split):
         ( ptg_root,
         recipe_data_dir,
         recipe_activity_config_fn,
-        recipe_activity_gt_dir, 
+        recipe_activity_gt_dir,
         recipe_ros_bags_dir,
         recipe_training_split,
         recipe_obj_dets_dir,
@@ -78,6 +78,15 @@ def read_image(image_fn, imgsz, stride, device, half):
 
     return img0, img
 
+
+def load_model(device, weights_fp, img_size):
+    device = select_device(device)
+    model = attempt_load(weights_fp, map_location=device)  # load FP32 model
+    stride = int(model.stride.max())  # model stride
+    imgsz = check_img_size(img_size, s=stride)  # check img_size
+    return device, model, stride, imgsz
+
+
 def detect(opt):
     """Run the model over a series of images
     """
@@ -85,10 +94,7 @@ def detect(opt):
     Path(save_path).mkdir(parents=True, exist_ok=True)
 
     # Load model
-    device = select_device(opt.device)
-    model = attempt_load(opt.weights, map_location=device)  # load FP32 model
-    stride = int(model.stride.max())  # model stride
-    imgsz = check_img_size(opt.img_size, s=stride)  # check img_size
+    device, model, stride, imgsz = load_model(opt.device, opt.weights, opt.img_size)
 
     if not opt.no_trace:
         model = TracedModel(model, device, opt.img_size)
@@ -127,7 +133,7 @@ def detect(opt):
     for video in videos:
         video_name = os.path.basename(video)
         video_recipe = "tea" if "tea" in video_name else "coffee"
-        
+
         video_id = video_id + 1 #vid = dset._next_ids.get('videos')
         video_data = {
             "id": video_id,
@@ -174,10 +180,10 @@ def detect(opt):
             for i, det in enumerate(pred):  # detections per image
                 if not len(det):
                     continue
-                
+
                 # Rescale boxes from img_size to img0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], img0.shape).round()
-                
+
                 for *xyxy, conf, cls_id in reversed(det): # center xy, wh
                     gn = torch.tensor(img0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
                     norm_xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
@@ -202,10 +208,10 @@ def detect(opt):
                     if opt.save_img:  # Add bbox to image
                         label = f'{names[int(cls_id)]} {conf:.2f}'
                         plot_one_box(xyxy, img0, label=label, color=colors[int(cls_id)], line_thickness=1)
-            
+
             if opt.save_img:
                 cv2.imwrite(f"{save_imgs_dir}/{fn}", img0)
-    
+
     # Save
     dset = kwcoco.CocoDatset(dset)
     dset.fpath = f"{save_path}/{opt.name}_{opt.split}_obj_results.mscoco.json"
