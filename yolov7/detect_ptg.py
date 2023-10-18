@@ -5,10 +5,12 @@ import torch
 import kwcoco
 import glob
 import cv2
+from typing import Tuple, Union
 import warnings
 
 import ubelt as ub
 import numpy as np
+import numpy.typing as npt
 
 from pathlib import Path
 
@@ -53,18 +55,31 @@ def data_loader(recipes, split):
     videos = training_split[split]
     return videos
 
-def read_image(image_fn, imgsz, stride, device, half):
-    """Read the image file and preprocess it
 
-    :return:
-        - img0: The original image
-        - img: The preprocessed image
+def preprocess_bgr_img(
+    img_bgr: npt.ArrayLike,
+    imgsz: Union[int, Tuple[int, int]],
+    stride: int,
+    device: torch.device,
+    half: bool,
+) -> torch.Tensor:
     """
-    img0 = cv2.imread(image_fn)  # BGR
-    assert img0 is not None, 'Image Not Found ' + image_fn
+    Prepare a BGR image matrix for inference processing by the model.
 
+    :param img_bgr: Input BGR image matrix in [H, W, C] order.
+    :param imgsz: Integer (square size) or [height, width] tuple specifying the
+        target image size to transform to.
+    :param stride: Model stride to take into account.
+    :param device: Device the model is located on so we can move our tensor
+        there as well.
+    :param half: True if the model is using half width (FP16), false if not
+        (FP32).
+
+    :return: The processed image as a Tensor instance on the same device as
+        input.
+    """
     # Padded resize
-    img = letterbox(img0, imgsz, stride=stride)[0]
+    img = letterbox(img_bgr, imgsz, stride=stride)[0]
 
     # Convert
     img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
@@ -73,13 +88,27 @@ def read_image(image_fn, imgsz, stride, device, half):
     img = torch.from_numpy(img).to(device)
     img = img.half() if half else img.float()  # uint8 to fp16/32
     img /= 255.0  # 0 - 255 to 0.0 - 1.0
+
+    # Add the batch dimension if it is not there.
     if img.ndimension() == 3:
         img = img.unsqueeze(0)
-
-    return img0, img
+    return img
 
 
 def load_model(device, weights_fp, img_size):
+    """
+    Load Yolo v7 model from provided weights.
+
+    :param device: Device type to load the model and weights onto.
+    :param weights_fp: Filesystem path to the weights to load.
+    :param img_size: Desired network input size to be checked and adjusted.
+
+    :return: This will return a tuple of:
+        [0] Torch device instance the model is loaded onto.
+        [1] The model instance.
+        [2] The model's stride.
+        [3] The **adjusted** image input size to be given to the loaded model.
+    """
     device = select_device(device)
     model = attempt_load(weights_fp, map_location=device)  # load FP32 model
     stride = int(model.stride.max())  # model stride
@@ -153,7 +182,9 @@ def detect(opt):
         images = Re_order(images, len(images))
         for image_fn in ub.ProgIter(images, desc=f"images in {video_name}"):
             fn = os.path.basename(image_fn)
-            img0, img = read_image(image_fn, imgsz, stride, device, half)
+            img0 = cv2.imread(image_fn)  # BGR
+            assert img0 is not None, 'Image Not Found ' + image_fn
+            img = preprocess_bgr_img(img0, imgsz, stride, device, half)
             height, width = img0.shape[:2]
 
             frame_num, time = time_from_name(image_fn)
