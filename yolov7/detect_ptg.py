@@ -5,7 +5,7 @@ import torch
 import kwcoco
 import glob
 import cv2
-from typing import Tuple, Union
+from typing import List, Optional, Tuple, Union
 import warnings
 
 import ubelt as ub
@@ -18,6 +18,7 @@ from angel_system.data.data_paths import grab_data, activity_gt_dir
 from angel_system.data.common.load_data import time_from_name
 from angel_system.data.common.load_data import Re_order
 
+from yolov7.models.yolo import Model as YoloModel
 from yolov7.models.experimental import attempt_load
 from yolov7.utils.general import check_img_size, non_max_suppression, scale_coords, xyxy2xywh
 from yolov7.utils.torch_utils import select_device, TracedModel
@@ -116,6 +117,84 @@ def load_model(device, weights_fp, img_size):
     return device, model, stride, imgsz
 
 
+def predict_image(
+    img0: npt.NDArray,
+    device: torch.device,
+    model: torch.nn.Module,
+    # Preprocessing parameters
+    stride: int,
+    imgsz: Union[int, Tuple[int, int]],
+    half: bool,
+    # Prediction parameters
+    augment: bool,
+    det_conf_threshold: float,
+    iou_threshold: float,
+    filter_classes: Optional[List[int]],
+    class_agnostic_nms: bool,
+):
+    """
+    Perform a full prediction step given a raw BGR input image.
+
+    This function results in a generator that yields individual detection
+    attributes as tuples.
+    Each yielded element will be of the format:
+        * [0] xyxy bounding-box 4-tensor (upper-left, lower-right) in input
+          image coordinate space.
+        * [1] float detection confidence score
+        * [2] integer predicted class index (indexing `model.names`)
+
+    :param img0: Original input image matrix in [H, W, C] format.
+    :param img: Pre-processed image as a torch.Tensor. Assumed to be on the
+        same device as the model.
+    :param imgsz: Integer (square size) or [height, width] tuple specifying the
+        target image size to transform to.
+    :param model: The model to perform inference with. Expecting a module with
+        a `forward` method with the same interface as that in
+        `yolov7.models.yolo.Model`.
+    :param stride: Model stride to take into account.
+    :param device: Device the model is located on, so we can move our tensor
+        there as well.
+    :param half: True if the model is using half width (FP16), false if not
+        (FP32).
+    :param augment: If augmentation should be applied for this inference.
+
+    :return: Generator over individual detections.
+    """
+    height, width = img0.shape[:2]
+
+    # Preprocess image
+    img = preprocess_bgr_img(img0, imgsz, stride, device, half)
+
+    # Predict
+    with torch.no_grad():  # Calculating gradients would cause a GPU memory leak
+        pred = model(img, augment=augment)[0]
+
+    # Apply NMS
+    pred_nms = non_max_suppression(pred, det_conf_threshold, iou_threshold,
+                                   classes=filter_classes,
+                                   agnostic=class_agnostic_nms)
+    assert len(pred_nms) == 1, (
+        f"We are only processing one image, so only a list of 1 element "
+        f"should only every be returned from non_max_suppression. "
+        f"Instead received: {len(pred_nms)}"
+    )
+
+    # Post-process detections
+    # * If `augment` is True, prediction will output separate detection sets for
+    #   each augmentation pass, thus the loop.
+    for i, dets in enumerate(pred_nms):  # detections per [augmented] image
+        if not len(dets):
+            continue
+        dets = dets.cpu()
+
+        # Rescale boxes from img_size to img0 size
+        dets[:, :4] = scale_coords(img.shape[2:], dets[:, :4], img0.shape).round()
+
+        # Chesterton's Fence: Why reversed?
+        for *xyxy, conf, cls_id in reversed(dets):  # center xy, wh
+            yield torch.tensor(xyxy), conf, cls_id.int()
+
+
 def detect(opt):
     """Run the model over a series of images
     """
@@ -184,7 +263,6 @@ def detect(opt):
             fn = os.path.basename(image_fn)
             img0 = cv2.imread(image_fn)  # BGR
             assert img0 is not None, 'Image Not Found ' + image_fn
-            img = preprocess_bgr_img(img0, imgsz, stride, device, half)
             height, width = img0.shape[:2]
 
             frame_num, time = time_from_name(image_fn)
@@ -201,44 +279,33 @@ def detect(opt):
             dset['images'].append(image)
             #img_id = dset.add_image(**image)
 
-            # Predict
-            with torch.no_grad():   # Calculating gradients would cause a GPU memory leak
-                pred = model(img, augment=opt.augment)[0]
-            # Apply NMS
-            pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
+            gn = torch.tensor(img0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
+            for xyxy, conf, cls_id in predict_image(
+                img0, device, model, stride, imgsz, half, opt.augment,
+                opt.conf_thres, opt.iou_thres, opt.classes, opt.agnostic_nms
+            ):
+                norm_xywh = (xyxy2xywh(xyxy.view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
+                cxywh = [norm_xywh[0] * width, norm_xywh[1] * height,
+                         norm_xywh[2] * width, norm_xywh[3] * height]  # center xy, wh
+                xywh = [cxywh[0] - (cxywh[2] / 2), cxywh[1] - (cxywh[3] / 2),
+                        cxywh[2], cxywh[3]]
 
-            # Process detections
-            for i, det in enumerate(pred):  # detections per image
-                if not len(det):
-                    continue
+                ann_id = ann_id + 1
+                ann = {
+                    "id": ann_id,
+                    "area": xywh[2] * xywh[3],
+                    "image_id": img_id,
+                    "category_id": cls_id,
+                    "bbox": xywh,
+                    "confidence": float(conf),
+                }
+                dset['annotations'].append(ann)
+                # dset.add_annotation(**ann)
 
-                # Rescale boxes from img_size to img0 size
-                det[:, :4] = scale_coords(img.shape[2:], det[:, :4], img0.shape).round()
-
-                for *xyxy, conf, cls_id in reversed(det): # center xy, wh
-                    gn = torch.tensor(img0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
-                    norm_xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-                    cxywh = [norm_xywh[0] * width, norm_xywh[1] * height,
-                            norm_xywh[2] * width, norm_xywh[3] * height] # center xy, wh
-                    xywh = [cxywh[0] - (cxywh[2] / 2), cxywh[1] - (cxywh[3] / 2),
-                            cxywh[2], cxywh[3]]
-
-                    ann_id = ann_id + 1
-                    ann = {
-                        "id": ann_id,
-                        "area": xywh[2] * xywh[3],
-                        "image_id": img_id,
-                        "category_id": cls_id,
-                        "bbox": xywh,
-                        "confidence": float(conf),
-                    }
-                    dset['annotations'].append(ann)
-                    #dset.add_annotation(**ann)
-
-                    # Optionaly draw results
-                    if opt.save_img:  # Add bbox to image
-                        label = f'{names[int(cls_id)]} {conf:.2f}'
-                        plot_one_box(xyxy, img0, label=label, color=colors[int(cls_id)], line_thickness=1)
+                # Optionaly draw results
+                if opt.save_img:  # Add bbox to image
+                    label = f'{names[int(cls_id)]} {conf:.2f}'
+                    plot_one_box(xyxy, img0, label=label, color=colors[int(cls_id)], line_thickness=1)
 
             if opt.save_img:
                 cv2.imwrite(f"{save_imgs_dir}/{fn}", img0)
