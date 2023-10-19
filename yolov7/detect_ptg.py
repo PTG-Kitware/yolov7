@@ -127,6 +127,7 @@ def predict_image(
     half: bool,
     # Prediction parameters
     augment: bool,
+    # NMS Parameters
     det_conf_threshold: float,
     iou_threshold: float,
     filter_classes: Optional[List[int]],
@@ -143,6 +144,10 @@ def predict_image(
         * [1] float detection confidence score
         * [2] integer predicted class index (indexing `model.names`)
 
+    Detection confidence filtering is based on the product of the detection
+    score times the class score, occurring within the non-max-suppression
+    operation.
+
     :param img0: Original input image matrix in [H, W, C] format.
     :param img: Pre-processed image as a torch.Tensor. Assumed to be on the
         same device as the model.
@@ -157,6 +162,14 @@ def predict_image(
     :param half: True if the model is using half width (FP16), false if not
         (FP32).
     :param augment: If augmentation should be applied for this inference.
+    :param det_conf_threshold: Confidence threshold in the [0, 1] range that
+        output detections must meet or exceed.
+    :param iou_threshold: IoU threshold for non-max-suppression operation.
+    :param filter_classes: List of classes to filter output detections -- only
+        detections whose class is in this list passes the filter. Pass `None`
+        to **not** filter detections by class. An empty list means all
+        detections will be filtered **out** (nothing to match against).
+    :param class_agnostic_nms: IDK, usually seen this be False.
 
     :return: Generator over individual detections.
     """
@@ -167,6 +180,9 @@ def predict_image(
 
     # Predict
     with torch.no_grad():  # Calculating gradients would cause a GPU memory leak
+        # Shape: [batch_size, n_dets, bbox(4)+conf(1)+class_conf(n_classes)]
+        #                             \-> 5 + n_classes
+        # If augment is true, the `n_dets` dimension of `pred` will be larger.
         pred = model(img, augment=augment)[0]
 
     # Apply NMS
@@ -180,19 +196,14 @@ def predict_image(
     )
 
     # Post-process detections
-    # * If `augment` is True, prediction will output separate detection sets for
-    #   each augmentation pass, thus the loop.
-    for i, dets in enumerate(pred_nms):  # detections per [augmented] image
-        if not len(dets):
-            continue
-        dets = dets.cpu()
+    dets = pred_nms[0].cpu()
 
-        # Rescale boxes from img_size to img0 size
-        dets[:, :4] = scale_coords(img.shape[2:], dets[:, :4], img0.shape).round()
+    # Rescale boxes from img_size to img0 size
+    dets[:, :4] = scale_coords(img.shape[2:], dets[:, :4], img0.shape).round()
 
-        # Chesterton's Fence: Why reversed?
-        for *xyxy, conf, cls_id in reversed(dets):  # center xy, wh
-            yield torch.tensor(xyxy), conf, cls_id.int()
+    # Chesterton's Fence: Why reversed?
+    for *xyxy, conf, cls_id in reversed(dets):  # center xy, wh
+        yield torch.tensor(xyxy), conf, cls_id.int()
 
 
 def detect(opt):
@@ -316,6 +327,7 @@ def detect(opt):
     dset.dump(dset.fpath, newlines=True)
     print(f"Saved predictions to {dset.fpath}")
 
+
 def main():
     parser = argparse.ArgumentParser()
 
@@ -403,6 +415,7 @@ def main():
     print(opt)
 
     detect(opt)
+
 
 if __name__ == '__main__':
     main()
