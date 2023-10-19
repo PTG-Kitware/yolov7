@@ -44,7 +44,6 @@ def data_loader(recipes, split):
         recipe_training_split,
         recipe_obj_dets_dir,
         recipe_obj_config ) = grab_data(recipe, "gyges")
-
         training_split = {key: value + recipe_training_split[key] for key, value in training_split.items()}
 
     print("\nTraining split:")
@@ -227,12 +226,7 @@ def detect(opt):
     print(names)
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
 
-    dset = {
-        "categories": [],
-        "videos": [],
-        "images": [],
-        "annotations": []
-    }#kwcoco.CocoDataset()
+    dset = kwcoco.CocoDataset()
     video_id = 0
     img_id = 0
     ann_id = 0
@@ -241,26 +235,28 @@ def detect(opt):
     for i, object_label in enumerate(names):
         if object_label == "background":
             continue
-        cat = {
-            "id": i,
-            "name": object_label,
-        }
-        dset["categories"].append(cat)
-        #dset.add_category(name=object_label, id=i)
+        dset.add_category(name=object_label, id=i)
 
     videos = data_loader(opt.recipes, opt.split)
     for video in videos:
         video_name = os.path.basename(video)
-        video_recipe = "tea" if "tea" in video_name else "coffee"
 
-        video_id = video_id + 1 #vid = dset._next_ids.get('videos')
+        if "tea" in video_name:
+            video_recipe = "tea"
+        elif "dessert" in video_name:
+            video_recipe = "dessertquesadilla"
+        elif "oatmeal" in video_name:
+            video_recipe = "oatmeal"
+        elif "pinwheel" in video_name:
+            video_recipe = "pinwheel"
+        else:
+            video_recipe = "coffee"
+        
         video_data = {
-            "id": video_id,
             "name": video_name,
             "recipe": video_recipe,
         }
-        dset['videos'].append(video_data)
-        #vid = dset.add_video(**video_data)
+        vid = dset.add_video(**video_data)
 
         if opt.save_img:
             save_imgs_dir = f"{save_path}/images/{video_name}"
@@ -278,17 +274,14 @@ def detect(opt):
 
             frame_num, time = time_from_name(image_fn)
 
-            img_id = img_id + 1 #dset._next_ids.get('images')
             image = {
-                "id": img_id,
                 "file_name": image_fn,
                 "video_id": video_id,
                 "frame_index": frame_num,
                 "width": width,
                 "height": height,
             }
-            dset['images'].append(image)
-            #img_id = dset.add_image(**image)
+            img_id = dset.add_image(**image)
 
             gn = torch.tensor(img0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
             for xyxy, conf, cls_id in predict_image(
@@ -301,17 +294,14 @@ def detect(opt):
                 xywh = [cxywh[0] - (cxywh[2] / 2), cxywh[1] - (cxywh[3] / 2),
                         cxywh[2], cxywh[3]]
 
-                ann_id = ann_id + 1
                 ann = {
-                    "id": ann_id,
                     "area": xywh[2] * xywh[3],
                     "image_id": img_id,
                     "category_id": cls_id,
                     "bbox": xywh,
                     "confidence": float(conf),
                 }
-                dset['annotations'].append(ann)
-                # dset.add_annotation(**ann)
+                dset.add_annotation(**ann)
 
                 # Optionaly draw results
                 if opt.save_img:  # Add bbox to image
@@ -322,7 +312,6 @@ def detect(opt):
                 cv2.imwrite(f"{save_imgs_dir}/{fn}", img0)
 
     # Save
-    dset = kwcoco.CocoDatset(dset)
     dset.fpath = f"{save_path}/{opt.name}_{opt.split}_obj_results.mscoco.json"
     dset.dump(dset.fpath, newlines=True)
     print(f"Saved predictions to {dset.fpath}")
