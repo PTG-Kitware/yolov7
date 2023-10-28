@@ -36,8 +36,8 @@ $ wget https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7.pt wei
 
 ## Train
 ```bash
-$ python yolov7/train.py --workers 8 --device 0 --batch-size 4 --data configs/data/PTG/cooking/coffee+tea_task_objects.yaml --img 1280 1280 --cfg configs/model/training/PTG/cooking/
-yolov7_coffee+tea.yaml  --weights weights/yolov7.pt --name coffee+tea_yolov7 --hyp configs/data/hyp.scratch.custom.yaml
+$ python yolov7/train.py --workers 8 --device 0 --batch-size 16 --data configs/data/PTG/cooking/coffee+tea_task_objects.yaml --img 1280 1280 --cfg configs/model/training/PTG/cooking/
+yolov7_coffee+tea.yaml  --weights weights/yolov7.pt --project /data/PTG/cooking/training/yolo_object_detector/train/  --name coffee+tea_yolov7 --hyp configs/data/hyp.scratch.custom.yaml
 ```
 
 ## Inference
@@ -48,8 +48,9 @@ $ python yolov7/detect.py --weights runs/train/coffee+tea_yolov7/weights/best.pt
 
 ### Output to kwcoco
 ```bash
-$ python yolov7/detect_ptg.py --recipes coffee tea --split val --weights runs/train/coffee+tea_yolov7/weights/best.pt --project runs/detect --name coffee+tea_yolov7 --save-img
+$ python yolov7/detect_ptg.py --recipes coffee tea dessertquesadilla oatmeal pinwheel --split val --weights runs/train/coffee+tea_yolov7/weights/best.pt --project /data/PTG/cooking/training/yolo_object_detector/detect/ --name coffee+tea_yolov7 --device 0 --save-img
 ```
+* for some reason `--weights` needs to be a relative path 
 
 Your output should look like:
 ```
