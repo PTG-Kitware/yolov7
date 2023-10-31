@@ -227,9 +227,6 @@ def detect(opt):
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
 
     dset = kwcoco.CocoDataset()
-    video_id = 0
-    img_id = 0
-    ann_id = 0
 
     # Add categories
     for i, object_label in enumerate(names):
@@ -276,7 +273,7 @@ def detect(opt):
 
             image = {
                 "file_name": image_fn,
-                "video_id": video_id,
+                "video_id": vid,
                 "frame_index": frame_num,
                 "width": width,
                 "height": height,
