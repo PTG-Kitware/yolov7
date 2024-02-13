@@ -1,0 +1,23 @@
+# COCO 2017 dataset http://cocodataset.org
+
+# download command/URL (optional)
+#download: bash ./scripts/get_coco.sh
+
+# train and val data as 1) directory: path/images/, 2) file: path/images.txt, or 3) list: [path1/images/, path2/images/]
+#train: /data/PTG/cooking/images/coffee/  # 1463 images
+#train: ./coco/train2017.txt
+train: /home/local/KHQ/hannah.defazio/yolov7/datasets/M2/v0.56/m2_no_hand_no_amputation_stump/train.txt
+val: /home/local/KHQ/hannah.defazio/yolov7/datasets/M2/v0.56/m2_no_hand_no_amputation_stump/test.txt
+test: /home/local/KHQ/hannah.defazio/yolov7/datasets/M2/v0.56/m2_no_hand_no_amputation_stump/test.txt
+
+# number of classes (including background)
+nc: 5
+
+# class names
+names: [
+        "background",
+        "tourniquet_tourniquet",
+        "tourniquet_label",
+        "tourniquet_windlass",
+        "tourniquet_pen",
+]
