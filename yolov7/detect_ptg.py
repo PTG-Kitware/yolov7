@@ -14,7 +14,7 @@ import numpy.typing as npt
 
 from pathlib import Path
 
-from angel_system.data.data_paths import grab_data, activity_gt_dir
+from angel_system.data.medical.data_paths import grab_data
 from angel_system.data.common.load_data import time_from_name
 from angel_system.data.common.load_data import Re_order
 
@@ -26,8 +26,8 @@ from yolov7.utils.plots import plot_one_box
 from yolov7.utils.datasets import letterbox
 
 
-def data_loader(recipes, split):
-    """Create a list of all videos in the recipes for the given split
+def data_loader(tasks, split):
+    """Create a list of all videos in the tasks for the given split
 
     :return: List of absolute paths to video folders
     """
@@ -35,16 +35,16 @@ def data_loader(recipes, split):
         split: []
     }
 
-    for recipe in recipes:
+    for task in tasks:
         ( ptg_root,
-        recipe_data_dir,
-        recipe_activity_config_fn,
-        recipe_activity_gt_dir,
-        recipe_ros_bags_dir,
-        recipe_training_split,
-        recipe_obj_dets_dir,
-        recipe_obj_config ) = grab_data(recipe, "gyges")
-        training_split = {key: value + recipe_training_split[key] for key, value in training_split.items()}
+        task_data_dir,
+        task_activity_config_fn,
+        task_activity_gt_dir,
+        task_ros_bags_dir,
+        task_training_split,
+        task_obj_dets_dir,
+        task_obj_config ) = grab_data(task, "gyges")
+        training_split = {key: value + task_training_split[key] for key, value in training_split.items()}
 
     print("\nTraining split:")
     for split_name, videos in training_split.items():
@@ -234,24 +234,16 @@ def detect(opt):
             continue
         dset.add_category(name=object_label, id=i)
 
-    videos = data_loader(opt.recipes, opt.split)
+    videos = data_loader(opt.tasks, opt.split)
     for video in videos:
         video_name = os.path.basename(video)
 
-        if "tea" in video_name:
-            video_recipe = "tea"
-        elif "dessert" in video_name:
-            video_recipe = "dessertquesadilla"
-        elif "oatmeal" in video_name:
-            video_recipe = "oatmeal"
-        elif "pinwheel" in video_name:
-            video_recipe = "pinwheel"
-        else:
-            video_recipe = "coffee"
+        if "M2" in video:
+            video_task = "M2"
         
         video_data = {
             "name": video_name,
-            "recipe": video_recipe,
+            "task": video_task,
         }
         vid = dset.add_video(**video_data)
 
@@ -281,10 +273,13 @@ def detect(opt):
             img_id = dset.add_image(**image)
 
             gn = torch.tensor(img0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
-            for xyxy, conf, cls_id in predict_image(
+            
+            preds = predict_image(
                 img0, device, model, stride, imgsz, half, opt.augment,
                 opt.conf_thres, opt.iou_thres, opt.classes, opt.agnostic_nms
-            ):
+            )
+            top_k_preds = {}
+            for xyxy, conf, cls_id in preds:
                 norm_xywh = (xyxy2xywh(xyxy.view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
                 cxywh = [norm_xywh[0] * width, norm_xywh[1] * height,
                          norm_xywh[2] * width, norm_xywh[3] * height]  # center xy, wh
@@ -301,10 +296,38 @@ def detect(opt):
                 dset.add_annotation(**ann)
 
                 # Optionaly draw results
-                if opt.save_img:  # Add bbox to image
-                    label = f'{names[int(cls_id)]} {conf:.2f}'
-                    plot_one_box(xyxy, img0, label=label, color=colors[int(cls_id)], line_thickness=1)
+                if opt.save_img and not opt.top_k:  # Add bbox to image
+                    if cls_id != 0:
+                        label = f'{names[int(cls_id)]} {conf:.2f}'
+                        plot_one_box(xyxy, img0, label=label, color=colors[int(cls_id)], line_thickness=1)
+                    
+                # Determine top k results to draw later
+                if opt.top_k:
+                    cls_id_index = int(cls_id)
+                    k = {'conf': conf, "xyxy": xyxy}
+                    
+                    if cls_id_index not in top_k_preds.keys():
+                        top_k_preds[cls_id_index] = []
+                    if len(top_k_preds[cls_id_index]) < opt.top_k:
+                        top_k_preds[cls_id_index].append(k)
+                    else:
+                        # Determine if we should add k
+                        min_k = min(enumerate(top_k_preds[cls_id_index]), key=lambda x: float(x[1]["conf"]))
 
+                        if float(conf) > float(min_k[1]["conf"]):
+                            del top_k_preds[cls_id_index][min_k[0]]
+                            top_k_preds[cls_id_index].append(k)
+
+            # Only draw the top k detections per class
+            if opt.top_k and opt.save_img:
+                for cls_id, preds in top_k_preds.items():
+                    if cls_id != 0:
+                        for pred in preds:
+                            conf = pred["conf"]
+                            xyxy = pred["xyxy"]
+                            label = f'{names[int(cls_id)]} {conf:.2f}'
+                            plot_one_box(xyxy, img0, label=label, color=colors[int(cls_id)], line_thickness=1)
+                        
             if opt.save_img:
                 cv2.imwrite(f"{save_imgs_dir}/{fn}", img0)
 
@@ -318,7 +341,7 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        '--recipes',
+        '--tasks',
         type=str,
         nargs='+',
         default='coffee',
@@ -348,6 +371,12 @@ def main():
         type=float,
         default=0.25,
         help='object confidence threshold'
+    )
+    parser.add_argument(
+        '--top-k',
+        type=int,
+        default=2,
+        help='draw the top k detections for each class'
     )
     parser.add_argument(
         '--iou-thres',
