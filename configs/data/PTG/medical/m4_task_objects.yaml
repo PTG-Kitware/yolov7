@@ -1,0 +1,21 @@
+# COCO 2017 dataset http://cocodataset.org
+
+# download command/URL (optional)
+#download: bash ./scripts/get_coco.sh
+
+# train and val data as 1) directory: path/images/, 2) file: path/images.txt, or 3) list: [path1/images/, path2/images/]
+#train: /data/PTG/cooking/images/coffee/  # 1463 images
+#train: ./coco/train2017.txt
+train: /data/PTG/medical/object_anns/m4/v0.56/train.txt
+val: /data/PTG/medical/object_anns/m4/v0.56/test.txt
+test: /data/PTG/medical/object_anns/m4/v0.56/test.txt
+
+# number of classes (including background)
+nc: 3
+
+# class names
+names: [
+        "background",
+        "hemo_dressing",
+        "hemo_dressing_package",
+]

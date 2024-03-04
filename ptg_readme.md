@@ -4,6 +4,14 @@ Table of Contents
 
 [[_TOC_]]
 
+### Order of actions:
+- generate yolo format data
+- train object detector
+- inference objects + hands
+- generate pose and patient detections
+- train TCN
+- TCN inference
+
 ## Data
 ### Convert KWCOCO to Input Data
 ```bash
