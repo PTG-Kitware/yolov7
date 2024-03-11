@@ -316,6 +316,7 @@ def detect(opt):
         
     # print(f"dset cats: {dset.dataset['categories']}")
     # hand_cid = dset.dataset['categories'][-1]['id'] + 1
+    # hand_cid = dset.add_category(name="hand")
     left_hand_cid = dset.add_category(name="hand (left)")
     right_hand_cid = dset.add_category(name="hand (right)")
     # print(f"hand_cid: {hand_cid}")
@@ -337,6 +338,18 @@ def detect(opt):
                 # print(f"images: {len(images)}")
             else:
                 print(f"Fetching images for {video_name} from {video}")
+            
+            # re-order images
+            ## TODO: assert if in order. if not re-order them.
+            images_tmp = [0 for _ in range(len(images))]
+            for image_path in images:
+                image_idx = image_path.split('/')[-1].split('.')[0].split('_')[-1]
+                images_tmp[int(image_idx)] = image_path
+                # print(image_idx)
+                # exit()
+            images = images_tmp
+            # print(f"images: {images[:10]}")
+            # print(f"images sorted: {images_tmp[:10]}")
             # exit()
             if opt.save_vid:
                 frames = [0 for x in range(len(images))]
@@ -386,7 +399,7 @@ def detect(opt):
                                         device=device,
                                         verbose=False)[0] # list of length=num images
                 
-                print(f"preds: {preds}")
+                # print(f"preds: {preds}")
                 # exit()
                 
                 top_k_preds = {}
@@ -399,9 +412,9 @@ def detect(opt):
                     xywh = [cxywh[0] - (cxywh[2] / 2), cxywh[1] - (cxywh[3] / 2),
                             cxywh[2], cxywh[3]]
 
-                    print(f"norm_xywh: {norm_xywh}")
-                    print(f"cxywh: {cxywh}")
-                    print(f"xywh: {xywh}")
+                    # print(f"norm_xywh: {norm_xywh}")
+                    # print(f"cxywh: {cxywh}")
+                    # print(f"xywh: {xywh}")
                     ann = {
                         "area": xywh[2] * xywh[3],
                         "image_id": img_id,
@@ -434,13 +447,31 @@ def detect(opt):
                                 del top_k_preds[cls_id_index][min_k[0]]
                                 top_k_preds[cls_id_index].append(k)
                 
-                print(f"hand boxes: {len(hands_preds.boxes)}")
-                print(f"hand boxes: {hands_preds.boxes}")
-                # centers = [center for center i]
-                for bbox in hands_preds.boxes:
+                # print(f"hand boxes: {len(hands_preds.boxes)}") right_hand_cid left_hand_cid
+                hand_centers = [center.xywh.tolist()[0][0] for center in hands_preds.boxes][:2]
+                hands_label = []
+                if len(hand_centers) == 2:
+                    if hand_centers[0] > hand_centers[1]:
+                        hands_label.append(right_hand_cid)
+                        hands_label.append(left_hand_cid)
+                    elif hand_centers[0] <= hand_centers[1]:
+                        hands_label.append(left_hand_cid)
+                        hands_label.append(right_hand_cid)
+                elif len(hand_centers) == 1:
+                    if hand_centers[0] > width//2:
+                        hands_label.append(right_hand_cid)
+                    elif hand_centers[0] <= width//2:
+                        hands_label.append(left_hand_cid)
+                
+                # print(f"hand boxes: {hands_preds.boxes}")
+                # print(f"centers: {hand_centers}")
+                for bbox, hand_cid in zip(hands_preds.boxes, hands_label):
                     norm_xywh = bbox.xywhn.tolist()[0]
-                    xywh = [norm_xywh[0] * width, norm_xywh[1] * height,
+                    cxywh = [norm_xywh[0] * width, norm_xywh[1] * height,
                             norm_xywh[2] * width, norm_xywh[3] * height]  # xy, wh
+
+                    xywh = [cxywh[0] - (cxywh[2] / 2), cxywh[1] - (cxywh[3] / 2),
+                            cxywh[2], cxywh[3]]
                     # xywh = [cxywh[0] - (cxywh[2] / 2), cxywh[1] - (cxywh[3] / 2),
                     #         cxywh[2], cxywh[3]]
                     # cls_id = int(bbox.cls.item())
@@ -448,11 +479,9 @@ def detect(opt):
                     conf = bbox.conf.item()
                     
                     
-                    print(f"hand cxywh: {bbox.xywh}")
-                    print(f"hand xywh: {xywh}")
-                    
-                    
-                    
+                    # print(f"hand cxywh: {bbox.xywh}")
+                    # print(f"hand xywh: {xywh}")
+
                     ann = {
                     "area": xywh[2] * xywh[3],
                     "image_id": img_id,
@@ -460,7 +489,7 @@ def detect(opt):
                     "bbox": xywh,
                     "confidence": float(conf),
                     }
-                    exit()
+                    # exit()
                     dset.add_annotation(**ann)
                     if opt.save_img:
                         label = "hand"
@@ -476,7 +505,12 @@ def detect(opt):
                         # print(f"img0: {img0.shape}")
                         # print(f"xyxy: {xyxy}")
                         plot_one_box(xyxy_hand, img0, label=label, color=[0, 0, 0], line_thickness=1)
-
+                # if len(hand_centers) == 1:
+                #     import matplotlib.pyplot as plt
+                #     image_show = dset.draw_image(gid=img_id)
+                #     plt.imshow(image_show)
+                #     plt.savefig('myfig.png')
+                #     exit()
                 # Only draw the top k detections per class
                 if opt.top_k and opt.save_img:
                     for cls_id, preds in top_k_preds.items():
