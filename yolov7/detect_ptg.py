@@ -137,6 +137,17 @@ def load_model(device, weights_fp, img_size):
     imgsz = check_img_size(img_size, s=stride)  # check img_size
     return device, model, stride, imgsz
 
+def predict_hands(hand_model, img0, img_size, device):
+    
+    hands_preds = hand_model.predict(
+                                        source=img0,
+                                        conf=0.1,
+                                        imgsz=img_size,
+                                        device=device,
+                                        verbose=False)[0] # list of length=num images
+    
+
+    return hands_preds
 
 def predict_image(
     img0: npt.NDArray,
