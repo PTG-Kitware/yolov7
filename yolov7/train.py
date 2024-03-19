@@ -41,7 +41,18 @@ from yolov7.utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resu
 
 logger = logging.getLogger(__name__)
 
+"""
+python yolov7/train.py --workers 8 --device 0 --batch-size 4 --data configs/data/PTG/medical/m2_no_hand_no_amputation_stump_task_objects.yaml --img 768 768 --cfg configs/model/training/PTG/medical/yolov7_m2_no_hand_no_amputation_stump.yaml --weights weights/yolov7.pt --project /data/PTG/medical/training/yolo_object_detector/train/ --name m2_good_objects_only_no_hand_no_amputation_stump_hue --hyp configs/data/hyp.scratch.ptg.yaml
 
+python yolov7/train.py \
+    --workers 8 --device 0 --batch-size 4 --data configs/data/PTG/medical/m2_no_hand_no_amputation_stump_task_objects.yaml \
+    --img 768 768 --cfg configs/model/training/PTG/medical/yolov7_m2_no_hand_no_amputation_stump.yaml --weights weights/yolov7.pt \
+    --project /data/PTG/medical/training/yolo_object_detector/train/ --name m2_good_objects_only_no_hand_no_amputation_stump_hue \
+    --hyp configs/data/hyp.scratch.ptg.yaml
+
+python yolov7/train.py --workers 8 --device 0 --batch-size 4 --data configs/data/PTG/medical/m5_task_objects.yaml --img 768 768 --cfg configs/model/training/PTG/medical/yolov7_m5.yaml --weights weights/yolov7.pt --project /data/PTG/medical/training/yolo_object_detector/train/ --name m5_all_v1
+
+"""
 
 def train(hyp, opt, device, tb_writer=None):
     logger.info(colorstr('hyperparameters: ') + ', '.join(f'{k}={v}' for k, v in hyp.items()))
@@ -99,6 +110,7 @@ def train(hyp, opt, device, tb_writer=None):
     else:
         model = Model(opt.cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
     with torch_distributed_zero_first(rank):
+        print(f"data dict: {data_dict}")
         check_dataset(data_dict)  # check
     train_path = data_dict['train']
     test_path = data_dict['val']
@@ -618,6 +630,7 @@ if __name__ == '__main__':
             prefix = colorstr('tensorboard: ')
             logger.info(f"{prefix}Start with 'tensorboard --logdir {opt.project}', view at http://localhost:6006/")
             tb_writer = SummaryWriter(opt.save_dir)  # Tensorboard
+        print(f"hyp: {hyp}")
         train(hyp, opt, device, tb_writer)
 
     # Evolve hyperparameters (optional)
