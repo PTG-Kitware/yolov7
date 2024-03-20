@@ -138,7 +138,7 @@ def load_model(device, weights_fp, img_size):
     return device, model, stride, imgsz
 
 def predict_hands(hand_model, img0, img_size, device):
-    
+    width, height = img_size
     hands_preds = hand_model.predict(
                                         source=img0,
                                         conf=0.1,
@@ -146,8 +146,42 @@ def predict_hands(hand_model, img0, img_size, device):
                                         device=device,
                                         verbose=False)[0] # list of length=num images
     
+    hand_centers = [center.xywh.tolist()[0][0] for center in hands_preds.boxes][:2]
+    hands_label = []
+    
+    if len(hand_centers) == 2:
+        if hand_centers[0] > hand_centers[1]:
+            hands_label.append("hand (right)")
+            hands_label.append("hand (left)")
+        elif hand_centers[0] <= hand_centers[1]:
+            hands_label.append("hand (left)")
+            hands_label.append("hand (right)")
+    elif len(hand_centers) == 1:
+        if hand_centers[0] > width//2:
+            hands_label.append("hand (right)")
+        elif hand_centers[0] <= width//2:
+            hands_label.append("hand (left)")
+    
+    # print(f"hand boxes: {hands_preds.boxes}")
+    # print(f"centers: {hand_centers}")
+    boxes, labels, confs = [], [], []
+    for bbox, hand_cid in zip(hands_preds.boxes, hands_label):
+        # norm_xywh = bbox.xywhn.tolist()[0]
+        # cxywh = [norm_xywh[0] * width, norm_xywh[1] * height,
+        #         norm_xywh[2] * width, norm_xywh[3] * height]  # xy, wh
 
-    return hands_preds
+        # xywh = [cxywh[0] - (cxywh[2] / 2), cxywh[1] - (cxywh[3] / 2),
+        #         cxywh[2], cxywh[3]]
+        
+        xyxy_hand = bbox.xyxy.tolist()[0]
+
+        conf = bbox.conf.item()
+        
+        boxes.append(xyxy_hand)
+        labels.append(hand_cid)
+        confs.append(conf)
+
+    return boxes, labels, confs
 
 def predict_image(
     img0: npt.NDArray,
