@@ -137,12 +137,12 @@ def load_model(device, weights_fp, img_size):
     imgsz = check_img_size(img_size, s=stride)  # check img_size
     return device, model, stride, imgsz
 
-def predict_hands(hand_model, img0, img_size, device):
-    width, height = img_size
+def predict_hands(hand_model: YOLO, img0: np.array, device: str) -> tuple:
+    width, height = img0.shape[:2]
     hands_preds = hand_model.predict(
                                         source=img0,
                                         conf=0.1,
-                                        imgsz=img_size,
+                                        imgsz=width,
                                         device=device,
                                         verbose=False)[0] # list of length=num images
     
@@ -161,17 +161,9 @@ def predict_hands(hand_model, img0, img_size, device):
             hands_label.append("hand (right)")
         elif hand_centers[0] <= width//2:
             hands_label.append("hand (left)")
-    
-    # print(f"hand boxes: {hands_preds.boxes}")
-    # print(f"centers: {hand_centers}")
+
     boxes, labels, confs = [], [], []
     for bbox, hand_cid in zip(hands_preds.boxes, hands_label):
-        # norm_xywh = bbox.xywhn.tolist()[0]
-        # cxywh = [norm_xywh[0] * width, norm_xywh[1] * height,
-        #         norm_xywh[2] * width, norm_xywh[3] * height]  # xy, wh
-
-        # xywh = [cxywh[0] - (cxywh[2] / 2), cxywh[1] - (cxywh[3] / 2),
-        #         cxywh[2], cxywh[3]]
         
         xyxy_hand = bbox.xyxy.tolist()[0]
 
@@ -436,6 +428,8 @@ def detect(opt):
                     img0, device, model, stride, imgsz, half, opt.augment,
                     opt.conf_thres, opt.iou_thres, opt.classes, opt.agnostic_nms
                 )
+                
+                # print(f"opt.img_size: {opt.img_size}")
                 
                 hands_preds = hand_model.predict(
                                         source=img0,
