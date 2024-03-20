@@ -137,17 +137,43 @@ def load_model(device, weights_fp, img_size):
     imgsz = check_img_size(img_size, s=stride)  # check img_size
     return device, model, stride, imgsz
 
-def predict_hands(hand_model, img0, img_size, device):
-    
+def predict_hands(hand_model: YOLO, img0: np.array, device: str) -> tuple:
+    width, height = img0.shape[:2]
     hands_preds = hand_model.predict(
                                         source=img0,
                                         conf=0.1,
-                                        imgsz=img_size,
+                                        imgsz=width,
                                         device=device,
                                         verbose=False)[0] # list of length=num images
     
+    hand_centers = [center.xywh.tolist()[0][0] for center in hands_preds.boxes][:2]
+    hands_label = []
+    
+    if len(hand_centers) == 2:
+        if hand_centers[0] > hand_centers[1]:
+            hands_label.append("hand (right)")
+            hands_label.append("hand (left)")
+        elif hand_centers[0] <= hand_centers[1]:
+            hands_label.append("hand (left)")
+            hands_label.append("hand (right)")
+    elif len(hand_centers) == 1:
+        if hand_centers[0] > width//2:
+            hands_label.append("hand (right)")
+        elif hand_centers[0] <= width//2:
+            hands_label.append("hand (left)")
 
-    return hands_preds
+    boxes, labels, confs = [], [], []
+    for bbox, hand_cid in zip(hands_preds.boxes, hands_label):
+        
+        xyxy_hand = bbox.xyxy.tolist()[0]
+
+        conf = bbox.conf.item()
+        
+        boxes.append(xyxy_hand)
+        labels.append(hand_cid)
+        confs.append(conf)
+
+    return boxes, labels, confs
 
 def predict_image(
     img0: npt.NDArray,
@@ -402,6 +428,8 @@ def detect(opt):
                     img0, device, model, stride, imgsz, half, opt.augment,
                     opt.conf_thres, opt.iou_thres, opt.classes, opt.agnostic_nms
                 )
+                
+                # print(f"opt.img_size: {opt.img_size}")
                 
                 hands_preds = hand_model.predict(
                                         source=img0,
