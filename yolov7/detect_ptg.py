@@ -163,6 +163,7 @@ def predict_hands(hand_model: YOLO, img0: np.array, device: str) -> tuple:
             hands_label.append("hand (left)")
 
     boxes, labels, confs = [], [], []
+    
     for bbox, hand_cid in zip(hands_preds.boxes, hands_label):
         
         xyxy_hand = bbox.xyxy.tolist()[0]
@@ -257,12 +258,21 @@ def predict_image(
     # Post-process detections
     dets = pred_nms[0].cpu()
 
+    print(f"dets: {dets.shape}")
+    
     # Rescale boxes from img_size to img0 size
     dets[:, :4] = scale_coords(img.shape[2:], dets[:, :4], img0.shape).round()
 
     # Chesterton's Fence: Why reversed?
-    for *xyxy, conf, cls_id in reversed(dets):  # center xy, wh
-        yield torch.tensor(xyxy), conf, cls_id.int()
+    if dets.shape[0] == 0:
+        return [], [], []
+    else:
+        boxes, confs, classids = [], [], []
+        for *xyxy, conf, cls_id in reversed(dets):  # center xy, wh
+            boxes.append(torch.tensor(xyxy))
+            confs.append(conf)
+            classids.append(cls_id.int())
+            return boxes, confs, classids
 
 def video_to_frames(video_path, save_path, video_name):
     
