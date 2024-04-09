@@ -14,7 +14,7 @@ import numpy.typing as npt
 
 from pathlib import Path
 
-from angel_system.data.medical.data_paths import grab_data
+from angel_system.data.medical.data_paths import GrabData, grab_data
 from angel_system.data.common.load_data import time_from_name
 from angel_system.data.common.load_data import Re_order
 
@@ -45,25 +45,30 @@ python yolov7/detect_ptg.py --tasks m3 --split train --weights /data/PTG/medical
 
 """
 
-def data_loader(tasks, split):
+def data_loader(tasks: list, yaml_path: str, data_type: str='pro') -> dict:
     """Create a list of all videos in the tasks for the given split
 
     :return: List of absolute paths to video folders
     """
-    training_split = {
-        split: []
-    }
+    # training_split = {
+    #     split: []
+    # }
+    
     task_to_vids = {}
 
+    data_grabber = GrabData(yaml_path=yaml_path)
+    
     for task in tasks:
-        ( ptg_root,
-        task_data_dir,
-        task_activity_config_fn,
-        task_activity_gt_dir,
-        task_ros_bags_dir,
-        task_training_split,
-        task_obj_dets_dir,
-        task_obj_config ) = grab_data(task, "gyges")
+        # ( ptg_root,
+        # task_data_dir,
+        # task_activity_config_fn,
+        # task_activity_gt_dir,
+        # task_ros_bags_dir,
+        # task_training_split,
+        # task_obj_config ) = grab_data(task, "gyges")
+        
+        # task_training_split = grab_data(task, data_type)
+        task_training_split = data_grabber.grab_data(skill=task, data_type=data_type)
         task_to_vids[task] = task_training_split
         # training_split = {key: value + task_training_split[key] for key, value in training_split.items()}
 
@@ -258,7 +263,7 @@ def predict_image(
     # Post-process detections
     dets = pred_nms[0].cpu()
 
-    print(f"dets: {dets.shape}")
+    # print(f"dets: {dets.shape}")
     
     # Rescale boxes from img_size to img0 size
     dets[:, :4] = scale_coords(img.shape[2:], dets[:, :4], img0.shape).round()
@@ -312,10 +317,18 @@ def video_to_frames(video_path, save_path, video_name):
 
 def generate_images_gt(video_dir_path):
     
-    frames_save_path = f"{video_dir_path}/images/"
-    video_name = os.path.basename(video_dir_path)
-    video_path = f"{video_dir_path}/{video_name}.mp4"
-    gt_path = f"{video_dir_path}/{video_name}.skill_labels_by_frame.txt"
+    if os.path.isfile(video_dir_path):
+        from pathlib import Path
+        
+        video_path = video_dir_path
+        video_name = os.path.basename(video_path).split(".")[0]
+        path = Path(video_path)
+        frames_save_path = f"{path.parent.absolute()}/{video_name}/images/"
+    else:
+        frames_save_path = f"{video_dir_path}/images/"
+        video_name = os.path.basename(video_dir_path)
+        video_path = f"{video_dir_path}/{video_name}.mp4"
+        gt_path = f"{video_dir_path}/{video_name}.skill_labels_by_frame.txt"
     
     #todo: can add the GT by frame in this spot
     video_to_frames(video_path=video_path, save_path=frames_save_path, 
@@ -324,7 +337,7 @@ def generate_images_gt(video_dir_path):
     
     print(f"video path: {video_path}")
     
-    return
+    return frames_save_path
 
 def detect(opt):
     """Run the model over a series of images
@@ -366,22 +379,32 @@ def detect(opt):
     # hand_cid = dset.add_category(name="hand")
     left_hand_cid = dset.add_category(name="hand (left)")
     right_hand_cid = dset.add_category(name="hand (right)")
+    hands_cid_to_cat = {left_hand_cid: "hand (left)",
+                        right_hand_cid: "hand (right)"}
     # print(f"hand_cid: {hand_cid}")
     # exit()
     
-    tasks_to_videos = data_loader(opt.tasks, opt.split)
+    tasks_to_videos = data_loader(opt.tasks, data_type=opt.data_type, yaml_path=opt.data_gen_yaml)
+    
     for task in opt.tasks:
         videos = tasks_to_videos[task]
         for video in videos:
             
+            if os.path.isfile(video):
+                # from pathlib import Path
+                video_path = video
+                path = Path(video_path)
+                video_name = os.path.basename(video_path).split(".")[0]
+                frame_save_path = f"{path.parent.absolute()}/{video_name}/images/"
+            else:
+                video_name = os.path.basename(video)
+                frame_save_path = f"{video}/images/"
             
-            video_name = os.path.basename(video)
-            
-            images = glob.glob(f"{video}/images/*.png")
+            images = glob.glob(f"{frame_save_path}/*.png")
             if not images:
                 print(f"Images don't exist for video {video_name}. Generating images now")
-                generate_images_gt(video)
-                images = glob.glob(f"{video}/images/*.png")
+                frame_save_path = generate_images_gt(video)
+                images = glob.glob(f"{frame_save_path}/*.png")
                 # print(f"images: {len(images)}")
             else:
                 print(f"Fetching images for {video_name} from {video}")
@@ -447,12 +470,13 @@ def detect(opt):
                                         imgsz=opt.img_size,
                                         device=device,
                                         verbose=False)[0] # list of length=num images
-                
+                objcet_boxes, object_confs, objects_classids = preds
                 # print(f"preds: {preds}")
+                # print(f"hands_preds: {hands_preds}")
                 # exit()
                 
                 top_k_preds = {}
-                for xyxy, conf, cls_id in preds:
+                for xyxy, conf, cls_id in zip(objcet_boxes, object_confs, objects_classids):
                     
                     # print(f"xyxy 1 : {type(xyxy)}")
                     norm_xywh = (xyxy2xywh(xyxy.view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
@@ -524,7 +548,7 @@ def detect(opt):
                     # xywh = [cxywh[0] - (cxywh[2] / 2), cxywh[1] - (cxywh[3] / 2),
                     #         cxywh[2], cxywh[3]]
                     # cls_id = int(bbox.cls.item())
-                    # cls_name = names[cls_id]
+                    # cls_name = names[hand_cid]
                     conf = bbox.conf.item()
                     
                     
@@ -541,7 +565,7 @@ def detect(opt):
                     # exit()
                     dset.add_annotation(**ann)
                     if opt.save_img:
-                        label = "hand"
+                        label = f"{hands_cid_to_cat[hand_cid]}"
                         # xywh_t = torch.tensor(xywh).view(1,4)
                         xyxy_hand = bbox.xyxy.tolist()[0]
                         # print(f"xywh_t: {xywh_t}")
@@ -579,6 +603,7 @@ def detect(opt):
                 video_save_path = f"{save_path}/{video_name}.mp4"
                 # video = cv2.VideoWriter(video_save_path, 0, 1, (width,height))
                 
+                # print(f"frames: {frames}")
                 # for image_path in frames:
                 #     video.write(cv2.imread(image_path))
                 
@@ -697,6 +722,20 @@ def main():
         type=str,
         default='/home/local/KHQ/peri.akiva/projects/Hands_v5/Model/weights/best.pt',
         help='model.pt path(s)'
+    )
+    
+    parser.add_argument(
+        '--data-type',
+        type=str,
+        default='pro',
+        help='pro=use professional data, lab=use lab data'
+    )
+    
+    parser.add_argument(
+        '--data-gen-yaml',
+        type=str,
+        default='/home/local/KHQ/peri.akiva/projects/angel_system/config/data_generation/bbn_gyges.yaml',
+        help='Path to data generation yaml file'
     )
 
     opt = parser.parse_args()
