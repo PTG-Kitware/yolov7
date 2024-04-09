@@ -14,7 +14,7 @@ import numpy.typing as npt
 
 from pathlib import Path
 
-from angel_system.data.medical.data_paths import grab_data
+from angel_system.data.medical.data_paths import GrabData, grab_data
 from angel_system.data.common.load_data import time_from_name
 from angel_system.data.common.load_data import Re_order
 
@@ -45,16 +45,19 @@ python yolov7/detect_ptg.py --tasks m3 --split train --weights /data/PTG/medical
 
 """
 
-def data_loader(tasks, split, data_type='gyges'):
+def data_loader(tasks: list, yaml_path: str, data_type: str='pro') -> dict:
     """Create a list of all videos in the tasks for the given split
 
     :return: List of absolute paths to video folders
     """
-    training_split = {
-        split: []
-    }
+    # training_split = {
+    #     split: []
+    # }
+    
     task_to_vids = {}
 
+    data_grabber = GrabData(yaml_path=yaml_path)
+    
     for task in tasks:
         # ( ptg_root,
         # task_data_dir,
@@ -64,7 +67,8 @@ def data_loader(tasks, split, data_type='gyges'):
         # task_training_split,
         # task_obj_config ) = grab_data(task, "gyges")
         
-        task_training_split = grab_data(task, data_type)
+        # task_training_split = grab_data(task, data_type)
+        task_training_split = data_grabber.grab_data(skill=task, data_type=data_type)
         task_to_vids[task] = task_training_split
         # training_split = {key: value + task_training_split[key] for key, value in training_split.items()}
 
@@ -380,7 +384,8 @@ def detect(opt):
     # print(f"hand_cid: {hand_cid}")
     # exit()
     
-    tasks_to_videos = data_loader(opt.tasks, opt.split, data_type=opt.data_type)
+    tasks_to_videos = data_loader(opt.tasks, data_type=opt.data_type, yaml_path=opt.data_gen_yaml)
+    
     for task in opt.tasks:
         videos = tasks_to_videos[task]
         for video in videos:
@@ -722,8 +727,15 @@ def main():
     parser.add_argument(
         '--data-type',
         type=str,
-        default='gyges',
-        help='gyges=use professional data, bbn=use lab data'
+        default='pro',
+        help='pro=use professional data, lab=use lab data'
+    )
+    
+    parser.add_argument(
+        '--data-gen-yaml',
+        type=str,
+        default='/home/local/KHQ/peri.akiva/projects/angel_system/config/data_generation/bbn_gyges.yaml',
+        help='Path to data generation yaml file'
     )
 
     opt = parser.parse_args()
