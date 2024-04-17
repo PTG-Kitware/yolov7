@@ -25,7 +25,7 @@ from yolov7.utils.torch_utils import select_device, TracedModel
 from yolov7.utils.plots import plot_one_box
 from yolov7.utils.datasets import letterbox
 
-from ultralytics import YOLO
+from ultralytics import YOLO as YOLOv8
 import moviepy.video.io.ImageSequenceClip
 
 """
@@ -142,14 +142,16 @@ def load_model(device, weights_fp, img_size):
     imgsz = check_img_size(img_size, s=stride)  # check img_size
     return device, model, stride, imgsz
 
-def predict_hands(hand_model: YOLO, img0: np.array, device: str) -> tuple:
+def predict_hands(hand_model: YOLOv8, img0: np.array, device: str, imgsz: int) -> tuple:
+    # TODO: This is running a yolov8 model, move outside of the yolov7 repo
     width, height = img0.shape[:2]
     hands_preds = hand_model.predict(
-                                        source=img0,
-                                        conf=0.1,
-                                        imgsz=width,
-                                        device=device,
-                                        verbose=False)[0] # list of length=num images
+        source=img0,
+        conf=0.1,
+        imgsz=imgsz,
+        device=device,
+        verbose=False
+    )[0] # list of length=num images
     
     hand_centers = [center.xywh.tolist()[0][0] for center in hands_preds.boxes][:2]
     hands_label = []
