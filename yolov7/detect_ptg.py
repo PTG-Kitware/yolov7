@@ -52,11 +52,11 @@ def data_loader(tasks: list, yaml_path: str, data_type: str='pro') -> dict:
     # training_split = {
     #     split: []
     # }
-    
+
     task_to_vids = {}
 
     data_grabber = GrabData(yaml_path=yaml_path)
-    
+
     for task in tasks:
         # ( ptg_root,
         # task_data_dir,
@@ -65,7 +65,7 @@ def data_loader(tasks: list, yaml_path: str, data_type: str='pro') -> dict:
         # task_ros_bags_dir,
         # task_training_split,
         # task_obj_config ) = grab_data(task, "gyges")
-        
+
         # task_training_split = grab_data(task, data_type)
         task_training_split = data_grabber.grab_data(skill=task, data_type=data_type)
         task_to_vids[task] = task_training_split
@@ -135,12 +135,11 @@ def load_model(device, weights_fp, img_size):
         [3] The **adjusted** image input size to be given to the loaded model.
     """
     device = select_device(device)
-    print(f"weights: {weights_fp}")
     model = attempt_load(weights_fp, map_location=device)  # load FP32 model
     stride = int(model.stride.max())  # model stride
     imgsz = check_img_size(img_size, s=stride)  # check img_size
     return device, model, stride, imgsz
-    
+
 
 def predict_image(
     img0: npt.NDArray,
@@ -203,7 +202,6 @@ def predict_image(
     # Preprocess image
     img = preprocess_bgr_img(img0, imgsz, stride, device, half)
 
-    # print(f"image: {img.shape}")
     # Predict
     with torch.no_grad():  # Calculating gradients would cause a GPU memory leak
         # Shape: [batch_size, n_dets, bbox(4)+conf(1)+class_conf(n_classes)]
@@ -224,8 +222,6 @@ def predict_image(
     # Post-process detections
     dets = pred_nms[0].cpu()
 
-    # print(f"dets: {dets.shape}")
-    
     # Rescale boxes from img_size to img0 size
     dets[:, :4] = scale_coords(img.shape[2:], dets[:, :4], img0.shape).round()
 
@@ -238,10 +234,10 @@ def predict_image(
             boxes.append(torch.tensor(xyxy))
             confs.append(conf)
             classids.append(cls_id.int())
-            return boxes, confs, classids
+        return boxes, confs, classids
+
 
 def video_to_frames(video_path, save_path, video_name):
-    
     print(f"video path: {video_path}")
     cap = cv2.VideoCapture(video_path)
     frame_count = 0
@@ -277,10 +273,10 @@ def video_to_frames(video_path, save_path, video_name):
     return
 
 def generate_images_gt(video_dir_path):
-    
+
     if os.path.isfile(video_dir_path):
         from pathlib import Path
-        
+
         video_path = video_dir_path
         video_name = os.path.basename(video_path).split(".")[0]
         path = Path(video_path)
@@ -290,14 +286,14 @@ def generate_images_gt(video_dir_path):
         video_name = os.path.basename(video_dir_path)
         video_path = f"{video_dir_path}/{video_name}.mp4"
         gt_path = f"{video_dir_path}/{video_name}.skill_labels_by_frame.txt"
-    
+
     #todo: can add the GT by frame in this spot
-    video_to_frames(video_path=video_path, save_path=frames_save_path, 
+    video_to_frames(video_path=video_path, save_path=frames_save_path,
                     video_name=video_name)
-    
-    
+
+
     print(f"video path: {video_path}")
-    
+
     return frames_save_path
 
 def detect(opt):
@@ -314,7 +310,7 @@ def detect(opt):
     # print(f"image size opts: {opt.img_size}")
     # print(f"image size: {imgsz}")
     # exit()
-    
+
     if not opt.no_trace:
         model = TracedModel(model, device, opt.img_size)
 
@@ -334,7 +330,7 @@ def detect(opt):
         if object_label == "background":
             continue
         dset.add_category(name=object_label, id=i)
-        
+
     # print(f"dset cats: {dset.dataset['categories']}")
     # hand_cid = dset.dataset['categories'][-1]['id'] + 1
     # hand_cid = dset.add_category(name="hand")
@@ -344,13 +340,13 @@ def detect(opt):
                         right_hand_cid: "hand (right)"}
     # print(f"hand_cid: {hand_cid}")
     # exit()
-    
+
     tasks_to_videos = data_loader(opt.tasks, data_type=opt.data_type, yaml_path=opt.data_gen_yaml)
-    
+
     for task in opt.tasks:
         videos = tasks_to_videos[task]
         for video in videos:
-            
+
             if os.path.isfile(video):
                 # from pathlib import Path
                 video_path = video
@@ -360,7 +356,7 @@ def detect(opt):
             else:
                 video_name = os.path.basename(video)
                 frame_save_path = f"{video}/images/"
-            
+
             images = glob.glob(f"{frame_save_path}/*.png")
             if not images:
                 print(f"Images don't exist for video {video_name}. Generating images now")
@@ -369,7 +365,7 @@ def detect(opt):
                 # print(f"images: {len(images)}")
             else:
                 print(f"Fetching images for {video_name} from {video}")
-            
+
             # re-order images
             ## TODO: assert if in order. if not re-order them.
             images_tmp = [0 for _ in range(len(images))]
@@ -384,7 +380,7 @@ def detect(opt):
             # exit()
             if opt.save_vid:
                 frames = [0 for x in range(len(images))]
-            
+
             video_data = {
                 "name": video_name,
                 "task": task,
@@ -417,14 +413,14 @@ def detect(opt):
                 img_id = dset.add_image(**image)
 
                 gn = torch.tensor(img0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
-                
+
                 preds = predict_image(
                     img0, device, model, stride, imgsz, half, opt.augment,
                     opt.conf_thres, opt.iou_thres, opt.classes, opt.agnostic_nms
                 )
-                
+
                 # print(f"opt.img_size: {opt.img_size}")
-                
+
                 hands_preds = hand_model.predict(
                                         source=img0,
                                         conf=0.1,
@@ -435,10 +431,10 @@ def detect(opt):
                 # print(f"preds: {preds}")
                 # print(f"hands_preds: {hands_preds}")
                 # exit()
-                
+
                 top_k_preds = {}
                 for xyxy, conf, cls_id in zip(objcet_boxes, object_confs, objects_classids):
-                    
+
                     # print(f"xyxy 1 : {type(xyxy)}")
                     norm_xywh = (xyxy2xywh(xyxy.view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
                     cxywh = [norm_xywh[0] * width, norm_xywh[1] * height,
@@ -463,12 +459,12 @@ def detect(opt):
                         if cls_id != 0:
                             label = f'{names[int(cls_id)]} {conf:.2f}'
                             plot_one_box(xyxy, img0, label=label, color=colors[int(cls_id)], line_thickness=1)
-                        
+
                     # Determine top k results to draw later
                     if opt.top_k:
                         cls_id_index = int(cls_id)
                         k = {'conf': conf, "xyxy": xyxy}
-                        
+
                         if cls_id_index not in top_k_preds.keys():
                             top_k_preds[cls_id_index] = []
                         if len(top_k_preds[cls_id_index]) < opt.top_k:
@@ -480,7 +476,7 @@ def detect(opt):
                             if float(conf) > float(min_k[1]["conf"]):
                                 del top_k_preds[cls_id_index][min_k[0]]
                                 top_k_preds[cls_id_index].append(k)
-                
+
                 # print(f"hand boxes: {len(hands_preds.boxes)}") right_hand_cid left_hand_cid
                 hand_centers = [center.xywh.tolist()[0][0] for center in hands_preds.boxes][:2]
                 hands_label = []
@@ -496,7 +492,7 @@ def detect(opt):
                         hands_label.append(right_hand_cid)
                     elif hand_centers[0] <= width//2:
                         hands_label.append(left_hand_cid)
-                
+
                 # print(f"hand boxes: {hands_preds.boxes}")
                 # print(f"centers: {hand_centers}")
                 for bbox, hand_cid in zip(hands_preds.boxes, hands_label):
@@ -511,8 +507,8 @@ def detect(opt):
                     # cls_id = int(bbox.cls.item())
                     # cls_name = names[hand_cid]
                     conf = bbox.conf.item()
-                    
-                    
+
+
                     # print(f"hand cxywh: {bbox.xywh}")
                     # print(f"hand xywh: {xywh}")
 
@@ -554,25 +550,25 @@ def detect(opt):
                                 xyxy = pred["xyxy"]
                                 label = f'{names[int(cls_id)]} {conf:.2f}'
                                 plot_one_box(xyxy, img0, label=label, color=colors[int(cls_id)], line_thickness=1)
-                            
+
                 if opt.save_img:
                     cv2.imwrite(f"{save_imgs_dir}/{fn}", img0)
                     if opt.save_vid:
                         frames[int(frame_num)] = f"{save_imgs_dir}/{fn}"
-            
+
             if opt.save_vid:
                 video_save_path = f"{save_path}/{video_name}.mp4"
                 # video = cv2.VideoWriter(video_save_path, 0, 1, (width,height))
-                
+
                 # print(f"frames: {frames}")
                 # for image_path in frames:
                 #     video.write(cv2.imread(image_path))
-                
+
                 clip = moviepy.video.io.ImageSequenceClip.ImageSequenceClip(frames, fps=15)
                 clip.write_videofile(video_save_path)
                 # cv2.destroyAllWindows()
                 # video.release()
-                
+
                 print(f"Saved video to: {video_save_path}")
                 # exit()
 
@@ -670,13 +666,13 @@ def main():
         action='store_true',
         help='save results to *.png'
     )
-    
+
     parser.add_argument(
         '--save-vid',
         action='store_true',
         help='save results to *.mp4'
     )
-    
+
     parser.add_argument(
         '--hands-weights',
         nargs='+',
@@ -684,14 +680,14 @@ def main():
         default='/home/local/KHQ/peri.akiva/projects/Hands_v5/Model/weights/best.pt',
         help='model.pt path(s)'
     )
-    
+
     parser.add_argument(
         '--data-type',
         type=str,
         default='pro',
         help='pro=use professional data, lab=use lab data'
     )
-    
+
     parser.add_argument(
         '--data-gen-yaml',
         type=str,
