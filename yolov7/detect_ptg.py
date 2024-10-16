@@ -1,35 +1,24 @@
 #!/usr/bin/env python3
 
-import os
-import argparse
+from pathlib import Path
 import random
-import torch
-import kwcoco
-import glob
-import cv2
 from typing import List, Optional, Tuple, Union
-import warnings
 
 import click
-import ubelt as ub
+import cv2
+import kwcoco
+import moviepy.video.io.ImageSequenceClip
 import numpy as np
 import numpy.typing as npt
-
-from pathlib import Path
-
-from angel_system.data.medical.data_paths import GrabData
-# from angel_system.data.common.load_data import time_from_name
-# from angel_system.data.common.load_data import Re_order
-
+import torch
+import ubelt as ub
 from ultralytics import YOLO
-from yolov7.models.yolo import Model as YoloModel
 from yolov7.models.experimental import attempt_load
 from yolov7.utils.general import check_img_size, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy
 from yolov7.utils.torch_utils import select_device, TracedModel
 from yolov7.utils.plots import plot_one_box
 from yolov7.utils.datasets import letterbox
 
-import moviepy.video.io.ImageSequenceClip
 
 """
 
@@ -65,42 +54,6 @@ python yolov7/detect_ptg.py \
 --conf-thres 0.25
 
 """
-
-def data_loader(tasks: list, yaml_path: str, data_type: str='pro') -> dict:
-    """Create a list of all videos in the tasks for the given split
-
-    :return: List of absolute paths to video folders
-    """
-    # training_split = {
-    #     split: []
-    # }
-
-    task_to_vids = {}
-
-    data_grabber = GrabData(yaml_path=yaml_path)
-
-    for task in tasks:
-        # ( ptg_root,
-        # task_data_dir,
-        # task_activity_config_fn,
-        # task_activity_gt_dir,
-        # task_ros_bags_dir,
-        # task_training_split,
-        # task_obj_config ) = grab_data(task, "gyges")
-
-        # task_training_split = grab_data(task, data_type)
-        task_training_split = data_grabber.grab_data(skill=task, data_type=data_type)
-        task_to_vids[task] = task_training_split
-        # training_split = {key: value + task_training_split[key] for key, value in training_split.items()}
-
-    # print("\nTraining split:")
-    # for split_name, videos in training_split.items():
-    #     print(f"{split_name}: {len(videos)} videos")
-    #     print([os.path.basename(v) for v in videos])
-    # print("\n")
-
-    # videos = training_split[split]
-    return task_to_vids
 
 
 def preprocess_bgr_img(
@@ -410,11 +363,12 @@ def detect_v2(
     \b
     Example:
         python3 python-tpl/yolov7/yolov7/detect_ptg.py \\
-            -i ~/data/darpa-ptg/bbn_data/lab_data-working/m2_tourniquet/positive/3_tourns_122023/activity_truth.coco.json \\
+            -i ~/data/darpa-ptg/tcn_training_example/train-activity_truth.coco.json \\
             -o ~/data/darpa-ptg/tcn_training_example/train-object_detections.coco.json \\
             --model-hands ./model_files/object_detector/hands_model.pt \\
             --model-objects ./model_files/object_detector/m2_det.pt \\
             --model-device 0 \\
+            --no-trace \\
             --img-size 768 \\
             --save-img ./det-debug-imgs \\
             --top-k 4
@@ -472,6 +426,7 @@ def detect_v2(
     for vid_id in ub.ProgIter(
         dset.videos(),
         desc="Processing videos",
+        verbose=3,
     ):
         vid_obj = dset.index.videos[vid_id]  # noqa
         vid_img_ids = dset.index.vidid_to_gids[vid_id]
