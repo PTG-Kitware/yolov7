@@ -483,7 +483,7 @@ def detect_v2(
                     "image_id": img_id,
                     "category_id": cls_id,
                     "bbox": xywh,
-                    "confidence": float(conf),
+                    "score": float(conf),
                 }
                 dset.add_annotation(**ann)
 
