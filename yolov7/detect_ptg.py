@@ -205,7 +205,7 @@ def predict_image(
         return [], [], []
     else:
         boxes, confs, classids = [], [], []
-        for *xyxy, conf, cls_id in reversed(dets):  # center xy, wh
+        for *xyxy, conf, cls_id in reversed(dets):  # ul-xy, lr-xy
             boxes.append(torch.tensor(xyxy))
             confs.append(conf)
             classids.append(cls_id.int())
